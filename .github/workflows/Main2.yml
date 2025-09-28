@@ -43,10 +43,11 @@ jobs:
         continue-on-error: true   # permet de poursuivre même si la compilation échoue partiellement (résilience)
         run: |
           cd xnu
+          export RC_DARWIN_KERNEL_VERSION=25.0.0
           # Compilation parallele en mode RELEASE pour X86_64, sans LTO pour plus de stabilité
           make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE SDKROOT=${SDKROOT} BUILD_LTO=0 -j$(sysctl -n hw.ncpu) 2>&1 | tee build.log
-        # On utilise 'tee' pour **journaliser** la sortie du build dans build.log
-        # Les flags ARCH_CONFIGS et KERNEL_CONFIGS sont explicités selon la doc XNU [oai_citation:4‡github.com](https://github.com/apple-oss-distributions/xnu#:~:text=The%20xnu%20make%20system%20can,Here%20is%20the%20syntax) [oai_citation:5‡github.com](https://github.com/apple-oss-distributions/xnu#:~:text=,kernel%20configuration).
+          # On utilise 'tee' pour **journaliser** la sortie du build dans build.log
+          # Les flags ARCH_CONFIGS et KERNEL_CONFIGS sont explicités selon la doc XNU [oai_citation:4‡github.com](https://github.com/apple-oss-distributions/xnu#:~:text=The%20xnu%20make%20system%20can,Here%20is%20the%20syntax) [oai_citation:5‡github.com](https://github.com/apple-oss-distributions/xnu#:~:text=,kernel%20configuration).
 
       # 7. (Optionnel) Copier le noyau compilé et le script pour téléchargement ultérieur
       - name: Collect built kernel and script
