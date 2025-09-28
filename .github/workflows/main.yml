@@ -134,7 +134,7 @@ jobs:
           target="/usr/local/libexec"
           sudo mkdir -p "$target"
 
-          sudo cp "Build-XNU 2.0/availability.pl" "$target/availability.pl"
+          sudo cp "Build-XNU-2.0/availability.pl" "$target/availability.pl"
           sudo chmod +x "$target/availability.pl"
 
           echo "availability.pl installé dans $target :"
