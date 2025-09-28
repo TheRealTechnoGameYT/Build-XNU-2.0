@@ -28,6 +28,9 @@ jobs:
           echo "CPUs: $(sysctl -n hw.ncpu || echo unknown)"
           echo "PATH: $PATH"
           xcodebuild -version || true
+      - name: Clone Build-XNU 2.0 repo
+        run: |
+          git clone https://github.com/TheRealTechnoGameYT/Build-XNU-2.0.git build-xnu
 
       - name: Ensure brew & base tools
         run: |
@@ -134,7 +137,7 @@ jobs:
           target="/usr/local/libexec"
           sudo mkdir -p "$target"
 
-          sudo cp "Build-XNU-2.0/availability.pl" "$target/availability.pl"
+          sudo cp "build-xnu/availability.pl" "$target/availability.pl"
           sudo chmod +x "$target/availability.pl"
 
           echo "availability.pl installé dans $target :"
