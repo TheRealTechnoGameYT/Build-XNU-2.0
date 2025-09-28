@@ -130,31 +130,15 @@ jobs:
       - name: Ensure availability.pl
         run: |
           set -euo pipefail
-          SDKROOT="${SDKROOT:-}"
-          KDK_PATH="${KDK_PATH:-}"
-          if [ -n "$SDKROOT" ] && [ -d "$SDKROOT" ]; then
-            target="$SDKROOT/usr/local/libexec"
-          else
-            target="/usr/local/libexec"
-          fi
+          # Définir le dossier cible
+          target="/usr/local/libexec"
           sudo mkdir -p "$target"
-          found=0
-          if [ -n "$KDK_PATH" ]; then
-            c=$(find "$KDK_PATH" -type f -name "availability.pl" | head -n1 || true)
-            if [ -n "$c" ]; then
-              sudo cp "$c" "$target/"
-              sudo chmod +x "$target/availability.pl"
-              found=1
-            fi
-          fi
-          if [ "$found" -eq 0 ]; then
-            sudo tee "$target/availability.pl" >/dev/null <<'EOF'
-#!/usr/bin/env perl
-warn "availability.pl shim (fallback)\n";
-exit 0;
-EOF
-            sudo chmod +x "$target/availability.pl"
-          fi
+
+          sudo cp "Build-XNU 2.0/availability.pl" "$target/availability.pl"
+          sudo chmod +x "$target/availability.pl"
+
+          echo "availability.pl installé dans $target :"
+          ls -l "$target/availability.pl"
 
       - name: Clone latest XNU
         run: |
