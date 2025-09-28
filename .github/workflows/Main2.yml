@@ -26,12 +26,10 @@ jobs:
           export SDKROOT=$HOME/sdk/MacOSX.sdk
           echo "SDKROOT=$SDKROOT"
           
-          # Créer availability.pl dans un chemin modifiable
+          # Créer availability.pl avec echo
           mkdir -p $SDKROOT/usr/local/libexec
-          cat << 'EOF' > $SDKROOT/usr/local/libexec/availability.pl
-#!/usr/bin/env perl
-exit 0;
-EOF
+          echo '#!/usr/bin/env perl' > $SDKROOT/usr/local/libexec/availability.pl
+          echo 'exit 0;' >> $SDKROOT/usr/local/libexec/availability.pl
           chmod +x $SDKROOT/usr/local/libexec/availability.pl
           echo "availability.pl created and executable"
 
