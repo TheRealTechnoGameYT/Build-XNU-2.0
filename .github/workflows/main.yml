@@ -1,0 +1,241 @@
+name: Build latest XNU (x86_64, robust)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-xnu:
+    runs-on: macos-latest
+    timeout-minutes: 720
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Runner info
+        run: |
+          set -euo pipefail
+          echo "Runner info:"
+          sw_vers || true
+          uname -a
+          echo "CPUs: $(sysctl -n hw.ncpu || echo unknown)"
+          echo "PATH: $PATH"
+          xcodebuild -version || true
+
+      - name: Ensure brew & base tools
+        run: |
+          set -euo pipefail
+          if ! command -v brew >/dev/null 2>&1; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+            if [ -f /opt/homebrew/bin/brew ]; then
+              eval "$(/opt/homebrew/bin/brew shellenv)"
+            elif [ -f /usr/local/bin/brew ]; then
+              eval "$(/usr/local/bin/brew shellenv)"
+            fi
+          fi
+          brew update || true
+          brew install autoconf automake libtool gnu-tar bison flex gnu-sed coreutils jq || true
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          for X in /Applications/Xcode_16.4.app /Applications/Xcode.app; do
+            if [ -d "$X" ]; then
+              sudo xcode-select -s "$X/Contents/Developer"
+              echo "DEVELOPER_DIR=$X/Contents/Developer" >> $GITHUB_ENV
+              break
+            fi
+          done
+          sudo xcodebuild -license accept || true
+          xcodebuild -version || true
+
+      - name: Download & install KDK
+        id: get_kdk
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/kdk
+          cd /tmp/kdk
+          BASE="https://github.com/TheRealTechnoGameYT/XNU-Build/releases/download/Rien"
+          names=(
+            "KDK_26.1_25B5042k.kdk.zip"
+            "KDK_26.1_25B5042k.kdk.tar.gz"
+            "Kernel_Debug_Kit_26_build_25B5042k.dmg"
+            "Kernel_Debug_Kit_26_build_25B5042k.pkg"
+            "kdk.zip"
+            "kdk.tar.gz"
+          )
+          FOUND=""
+          for n in "${names[@]}"; do
+            url="$BASE/$n"
+            echo "Trying download: $url"
+            if curl -sfL -o "asset.tmp" "$url"; then
+              mv asset.tmp "$n"
+              FOUND="$n"
+              break
+            fi
+          done
+          if [ -z "$FOUND" ]; then
+            echo "::warning::No KDK asset found."
+            exit 0
+          fi
+          mkdir -p extract
+          if echo "$FOUND" | grep -E '\.zip$' >/dev/null; then
+            unzip -q "$FOUND" -d extract
+          elif echo "$FOUND" | grep -E '\.tar\.gz$|\.tgz$' >/dev/null; then
+            tar -xzf "$FOUND" -C extract
+          elif echo "$FOUND" | grep '\.dmg$' >/dev/null; then
+            hdiutil attach "$FOUND" -nobrowse -mountpoint /Volumes/_kdk_temp || true
+            cp -R /Volumes/_kdk_temp/* extract/ || true
+            hdiutil detach /Volumes/_kdk_temp || true
+          elif echo "$FOUND" | grep '\.pkg$' >/dev/null; then
+            sudo installer -pkg "$FOUND" -target / || true
+          fi
+          KDK_DIR=$(find extract -type d -name "*.kdk" | head -n1 || true)
+          if [ -n "$KDK_DIR" ]; then
+            sudo mkdir -p /Library/Developer/KDKs
+            sudo cp -R "$KDK_DIR" /Library/Developer/KDKs/
+            echo "kdk_path=/Library/Developer/KDKs/$(basename "$KDK_DIR")" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Detect KDK / SDK / Darwin version
+        id: detect_kdk
+        run: |
+          set -euo pipefail
+          KDK_DIR=$(ls -d /Library/Developer/KDKs/*.kdk 2>/dev/null | head -n1 || true)
+          if [ -n "$KDK_DIR" ]; then
+            echo "KDK_PATH=$KDK_DIR" >> $GITHUB_ENV
+            base=$(basename "$KDK_DIR")
+            darwin=$(echo "$base" | grep -oE '[0-9]+' | head -n1 || "")
+            if [ -n "$darwin" ]; then
+              echo "RC_DARWIN_KERNEL_VERSION=$darwin" >> $GITHUB_ENV
+            fi
+            sdk="$KDK_DIR/System/Library/Developer/SDKs/MacOSX.sdk"
+            if [ -d "$sdk" ]; then
+              echo "SDKROOT=$sdk" >> $GITHUB_ENV
+            fi
+          fi
+          # fallback to xcrun
+          sdk2=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+          if [ -n "$sdk2" ]; then
+            echo "SDKROOT=$sdk2" >> $GITHUB_ENV
+          fi
+
+      - name: Ensure availability.pl
+        run: |
+          set -euo pipefail
+          SDKROOT="${SDKROOT:-}"
+          KDK_PATH="${KDK_PATH:-}"
+          if [ -n "$SDKROOT" ] && [ -d "$SDKROOT" ]; then
+            target="$SDKROOT/usr/local/libexec"
+          else
+            target="/usr/local/libexec"
+          fi
+          sudo mkdir -p "$target"
+          found=0
+          if [ -n "$KDK_PATH" ]; then
+            c=$(find "$KDK_PATH" -type f -name "availability.pl" | head -n1 || true)
+            if [ -n "$c" ]; then
+              sudo cp "$c" "$target/"
+              sudo chmod +x "$target/availability.pl"
+              found=1
+            fi
+          fi
+          if [ "$found" -eq 0 ]; then
+            sudo tee "$target/availability.pl" >/dev/null <<'EOF'
+#!/usr/bin/env perl
+warn "availability.pl shim (fallback)\n";
+exit 0;
+EOF
+            sudo chmod +x "$target/availability.pl"
+          fi
+
+      - name: Clone latest XNU
+        run: |
+          set -euo pipefail
+          latest=$(git ls-remote --tags --refs https://github.com/apple-oss-distributions/xnu.git \
+            | awk -F/ '{print $NF}' | grep -v '\^{}' | sort -V | tail -n1 || true)
+          if [ -z "$latest" ]; then
+            git clone --depth 1 https://github.com/apple-oss-distributions/xnu.git xnu
+          else
+            git clone --depth 1 --branch "$latest" https://github.com/apple-oss-distributions/xnu.git xnu
+          fi
+          ls -l xnu
+
+      - name: Pre-check required tools
+        run: |
+          set -euo pipefail
+          for t in clang lipo strip nm otool libtool mig migcom iig git; do
+            p=$(xcrun --sdk macosx --find "$t" 2>/dev/null || true)
+            if [ -z "$p" ]; then
+              echo "::warning::$t not found via xcrun"
+            else
+              echo "$t -> $p"
+            fi
+          done
+
+      - name: Build XNU
+        id: build_kernel
+        run: |
+          set -euxo pipefail
+          cd xnu
+          SDKROOT="${SDKROOT:-}"
+          if [ -z "$SDKROOT" ]; then
+            SDKROOT=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+          fi
+          echo "SDKROOT=$SDKROOT"
+          if [ -n "${RC_DARWIN_KERNEL_VERSION:-}" ]; then
+            export RC_DARWIN_KERNEL_VERSION
+            echo "RC_DARWIN_KERNEL_VERSION=$RC_DARWIN_KERNEL_VERSION"
+          fi
+          log="$GITHUB_WORKSPACE/build.log"
+          echo "Build start $(date)" > "$log"
+          if [ -n "$SDKROOT" ]; then
+            make SDKROOT="$SDKROOT" ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
+            exitcode=${PIPESTATUS[0]}
+          else
+            make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
+            exitcode=${PIPESTATUS[0]}
+          fi
+          if [ "$exitcode" -ne 0 ]; then
+            echo "::error::make failed with exit $exitcode"
+            cp "$log" "$GITHUB_WORKSPACE/"
+            exit "$exitcode"
+          fi
+          cp "$log" "$GITHUB_WORKSPACE/"
+
+      - name: Package artifacts
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find xnu/BUILD -type f -name 'kernel' -exec cp {} artifacts/ \; || true
+          find xnu/BUILD -type d -name '*.dSYM' -exec cp -R {} artifacts/ \; || true
+          if [ -f build.log ]; then
+            cp build.log artifacts/
+          fi
+          tar -czf xnu-artifacts-$(date +%Y%m%d-%H%M).tar.gz artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xnu-artifacts
+          path: |
+            xnu-artifacts-*.tar.gz
+            artifacts/**
+
+      - name: On failure collect debug
+        if: failure()
+        run: |
+          set -euo pipefail
+          mkdir -p fail_debug
+          cp -R xnu/BUILD fail_debug/ || true
+          cp -R /tmp/kdk fail_debug/ || true
+          cp build.log fail_debug/ || true
+          tar -czf fail-artifacts-$(date +%Y%m%d-%H%M).tar.gz fail_debug
