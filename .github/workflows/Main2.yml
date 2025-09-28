@@ -11,27 +11,26 @@ jobs:
     runs-on: macos-14
 
     env:
-      # Chemin vers le KDK pour Darwin 26 / macOS Tahoe
-      KDK_PATH: /Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
       RC_DARWIN_KERNEL_VERSION: 26
-      SDKROOT: ${{ env.KDK_PATH }}/SDKs/MacOSX.sdk
       BUILD_LTO: 0
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Show environment
+      - name: Set KDK_PATH and SDKROOT
         run: |
-          echo "SDKROOT=$SDKROOT"
-          echo "RC_DARWIN_KERNEL_VERSION=$RC_DARWIN_KERNEL_VERSION"
+          export KDK_PATH=/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
+          export SDKROOT="$KDK_PATH/SDKs/MacOSX.sdk"
           echo "KDK_PATH=$KDK_PATH"
+          echo "SDKROOT=$SDKROOT"
 
       - name: Prepare build log
         run: echo "Build start $(date)" > build.log
 
       - name: Verify availability.pl
         run: |
+          SDKROOT=/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk/SDKs/MacOSX.sdk
           if [ ! -x "$SDKROOT/usr/local/libexec/availability.pl" ]; then
             echo "Error: availability.pl missing or not executable"
             exit 1
@@ -39,6 +38,8 @@ jobs:
 
       - name: Build XNU Kernel
         run: |
+          export KDK_PATH=/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
+          export SDKROOT="$KDK_PATH/SDKs/MacOSX.sdk"
           cd xnu
           make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE \
                SDKROOT="$SDKROOT" BUILD_LTO="$BUILD_LTO" \
