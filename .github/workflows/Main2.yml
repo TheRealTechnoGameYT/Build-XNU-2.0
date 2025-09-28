@@ -1,56 +1,55 @@
-name: Build XNU Kernel
+name: Build XNU
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  pull_request:
 
 jobs:
-  build-xnu:
-    runs-on: macos-14
+  build:
+    runs-on: macos-latest
 
     env:
       RC_DARWIN_KERNEL_VERSION: 26
       BUILD_LTO: 0
+      KDK_PATH: /Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set KDK_PATH and SDKROOT
+      - name: Set up temporary SDK
         run: |
-          export KDK_PATH=/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
-          export SDKROOT="$KDK_PATH/SDKs/MacOSX.sdk"
-          echo "KDK_PATH=$KDK_PATH"
+          mkdir -p $HOME/sdk
+          cp -R $KDK_PATH/SDKs/MacOSX.sdk $HOME/sdk/MacOSX.sdk
+          export SDKROOT=$HOME/sdk/MacOSX.sdk
+          echo "SDKROOT=$SDKROOT"
+          
+          # Créer availability.pl dans un chemin modifiable
+          mkdir -p $SDKROOT/usr/local/libexec
+          cat << 'EOF' > $SDKROOT/usr/local/libexec/availability.pl
+#!/usr/bin/env perl
+exit 0;
+EOF
+          chmod +x $SDKROOT/usr/local/libexec/availability.pl
+          echo "availability.pl created and executable"
+
+      - name: Display environment
+        run: |
+          echo "RC_DARWIN_KERNEL_VERSION=$RC_DARWIN_KERNEL_VERSION"
+          echo "BUILD_LTO=$BUILD_LTO"
           echo "SDKROOT=$SDKROOT"
 
-      - name: Prepare build log
-        run: echo "Build start $(date)" > build.log
-
-      - name: Create dummy availability.pl
+      - name: Build XNU
         run: |
-          mkdir -p $SDKROOT/usr/local/libexec
-          echo '#!/usr/bin/env perl' > $SDKROOT/usr/local/libexec/availability.pl
-          echo 'exit 0;' >> $SDKROOT/usr/local/libexec/availability.pl
-          chmod +x $SDKROOT/usr/local/libexec/availability.pl
-
-      - name: Build XNU Kernel
-        run: |
-          export KDK_PATH=/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
-          export SDKROOT="$KDK_PATH/SDKs/MacOSX.sdk"
           cd xnu
           make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE \
-               SDKROOT="$SDKROOT" BUILD_LTO="$BUILD_LTO" \
-               -j$(sysctl -n hw.ncpu) 2>&1 | tee -a ../build.log
-          exitcode=${PIPESTATUS[0]}
-          if [ "$exitcode" -ne 0 ]; then
-            echo "::error::make failed with exit $exitcode"
-            exit "$exitcode"
-          fi
+            SDKROOT=$SDKROOT BUILD_LTO=$BUILD_LTO -j$(sysctl -n hw.ncpu) 2>&1 | tee ../build.log
+        shell: bash
 
       - name: Upload build log
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: xnu-build-log
           path: build.log
