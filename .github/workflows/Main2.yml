@@ -37,8 +37,8 @@ jobs:
         run: |
           mkdir -p "${SDKROOT}/usr/local/libexec"
           cp availability.pl "${SDKROOT}/usr/local/libexec/"
-
-      # 6. Compiler XNU pour x86_64 en config RELEASE, avec journalisation de la sortie
+          chmod +x "${SDKROOT}/usr/local/libexec/availability.pl"
+         # 6. Compiler XNU pour x86_64 en config RELEASE, avec journalisation de la sortie
       - name: Build XNU Kernel
         continue-on-error: true   # permet de poursuivre même si la compilation échoue partiellement (résilience)
         run: |
