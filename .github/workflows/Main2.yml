@@ -57,7 +57,7 @@ jobs:
 
       # 8. Uploader les artefacts (noyau compilé et script)
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: xnu-kernel-and-script
           path: output/
