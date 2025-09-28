@@ -1,64 +1,46 @@
-name: Build XNU Kernel
+#!/bin/bash
+set -euxo pipefail
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+# Aller dans le dossier xnu
+cd xnu
 
-jobs:
-  build:
-    runs-on: macos-14   # On pointe sur macOS 14 explicitement (macos-latest devient macOS 15 à partir de sept. 2025 [oai_citation:3‡macfleet.cloud](https://www.macfleet.cloud/blog/github-actions-macos-runners-changes-2025#:~:text=macos))
-    steps:
-      # 1. Checkout de votre dépôt (contenant availability.pl)
-      - name: Checkout main repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+# Définir le SDK/KDK correspondant au kernel Tahoe (Darwin 26)
+# Remplacez ce chemin si votre KDK est ailleurs
+export KDK_PATH=${KDK_PATH:-/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk}
+export SDKROOT="$KDK_PATH/SDKs/MacOSX.sdk"
 
-      # 2. Checkout du source XNU officiel dans un dossier "xnu"
-      - name: Checkout XNU source
-        uses: actions/checkout@v4
-        with:
-          repository: apple-oss-distributions/xnu
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: xnu
+# Vérifier si SDKROOT est défini
+if [ -z "$SDKROOT" ]; then
+    SDKROOT=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
+fi
+echo "SDKROOT=$SDKROOT"
 
-      # 3. Installer les outils de ligne de commande / SDK si nécessaire (optionnel)
-      - name: Install Command Line Tools (if needed)
-        run: xcode-select --install || true
+# Définir la version du kernel Darwin
+export RC_DARWIN_KERNEL_VERSION=${RC_DARWIN_KERNEL_VERSION:-26}
+echo "RC_DARWIN_KERNEL_VERSION=$RC_DARWIN_KERNEL_VERSION"
 
-      # 4. Définir SDKROOT via xcrun pour pointer vers le SDK macOS installé
-      - name: Set SDKROOT environment variable
-        run: echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
+# Vérifier que availability.pl est présent et exécutable
+if [ ! -x "$SDKROOT/usr/local/libexec/availability.pl" ]; then
+    echo "Erreur : availability.pl manquant ou non exécutable dans $SDKROOT/usr/local/libexec"
+    exit 1
+fi
 
-      # 5. Créer le chemin et copier availability.pl dans $SDKROOT/usr/local/libexec
-      - name: Copier availability.pl dans le SDK
-        run: |
-          mkdir -p "${SDKROOT}/usr/local/libexec"
-          cp availability.pl "${SDKROOT}/usr/local/libexec/"
-          chmod +x "${SDKROOT}/usr/local/libexec/availability.pl"
-         # 6. Compiler XNU pour x86_64 en config RELEASE, avec journalisation de la sortie
-      - name: Build XNU Kernel
-        continue-on-error: true   # permet de poursuivre même si la compilation échoue partiellement (résilience)
-        run: |
-          cd xnu
-          export RC_DARWIN_KERNEL_VERSION=25.0.0
-          # Compilation parallele en mode RELEASE pour X86_64, sans LTO pour plus de stabilité
-          make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE SDKROOT=${SDKROOT} BUILD_LTO=0 -j$(sysctl -n hw.ncpu) 2>&1 | tee build.log
-          # On utilise 'tee' pour **journaliser** la sortie du build dans build.log
-          # Les flags ARCH_CONFIGS et KERNEL_CONFIGS sont explicités selon la doc XNU [oai_citation:4‡github.com](https://github.com/apple-oss-distributions/xnu#:~:text=The%20xnu%20make%20system%20can,Here%20is%20the%20syntax) [oai_citation:5‡github.com](https://github.com/apple-oss-distributions/xnu#:~:text=,kernel%20configuration).
+# Définir le fichier log
+log="$GITHUB_WORKSPACE/build.log"
+echo "Build start $(date)" > "$log"
 
-      # 7. (Optionnel) Copier le noyau compilé et le script pour téléchargement ultérieur
-      - name: Collect built kernel and script
-        run: |
-          mkdir -p output
-          cp xnu/BUILD/obj/RELEASE/X86_64/*.release output/ || true
-          cp availability.pl output/ || true
+# Lancer la compilation parallèle en mode RELEASE pour X86_64
+make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE SDKROOT="$SDKROOT" \
+    BUILD_LTO=0 -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
 
-      # 8. Uploader les artefacts (noyau compilé et script)
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: xnu-kernel-and-script
-          path: output/
+# Vérifier le code de sortie
+exitcode=${PIPESTATUS[0]}
+if [ "$exitcode" -ne 0 ]; then
+    echo "::error::make failed with exit $exitcode"
+    cp "$log" "$GITHUB_WORKSPACE/"
+    exit "$exitcode"
+fi
+
+# Copier le log final
+cp "$log" "$GITHUB_WORKSPACE/"
+echo "Build completed successfully"
