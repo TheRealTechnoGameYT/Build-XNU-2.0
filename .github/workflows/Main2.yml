@@ -1,46 +1,56 @@
-#!/bin/bash
-set -euxo pipefail
+name: Build XNU Kernel
 
-# Aller dans le dossier xnu
-cd xnu
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-# Définir le SDK/KDK correspondant au kernel Tahoe (Darwin 26)
-# Remplacez ce chemin si votre KDK est ailleurs
-export KDK_PATH=${KDK_PATH:-/Library/Developer/KDKs/KDK_26.1_25B5042k.kdk}
-export SDKROOT="$KDK_PATH/SDKs/MacOSX.sdk"
+jobs:
+  build-xnu:
+    runs-on: macos-14
 
-# Vérifier si SDKROOT est défini
-if [ -z "$SDKROOT" ]; then
-    SDKROOT=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
-fi
-echo "SDKROOT=$SDKROOT"
+    env:
+      # Chemin vers le KDK pour Darwin 26 / macOS Tahoe
+      KDK_PATH: /Library/Developer/KDKs/KDK_26.1_25B5042k.kdk
+      RC_DARWIN_KERNEL_VERSION: 26
+      SDKROOT: ${{ env.KDK_PATH }}/SDKs/MacOSX.sdk
+      BUILD_LTO: 0
 
-# Définir la version du kernel Darwin
-export RC_DARWIN_KERNEL_VERSION=${RC_DARWIN_KERNEL_VERSION:-26}
-echo "RC_DARWIN_KERNEL_VERSION=$RC_DARWIN_KERNEL_VERSION"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-# Vérifier que availability.pl est présent et exécutable
-if [ ! -x "$SDKROOT/usr/local/libexec/availability.pl" ]; then
-    echo "Erreur : availability.pl manquant ou non exécutable dans $SDKROOT/usr/local/libexec"
-    exit 1
-fi
+      - name: Show environment
+        run: |
+          echo "SDKROOT=$SDKROOT"
+          echo "RC_DARWIN_KERNEL_VERSION=$RC_DARWIN_KERNEL_VERSION"
+          echo "KDK_PATH=$KDK_PATH"
 
-# Définir le fichier log
-log="$GITHUB_WORKSPACE/build.log"
-echo "Build start $(date)" > "$log"
+      - name: Prepare build log
+        run: echo "Build start $(date)" > build.log
 
-# Lancer la compilation parallèle en mode RELEASE pour X86_64
-make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE SDKROOT="$SDKROOT" \
-    BUILD_LTO=0 -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
+      - name: Verify availability.pl
+        run: |
+          if [ ! -x "$SDKROOT/usr/local/libexec/availability.pl" ]; then
+            echo "Error: availability.pl missing or not executable"
+            exit 1
+          fi
 
-# Vérifier le code de sortie
-exitcode=${PIPESTATUS[0]}
-if [ "$exitcode" -ne 0 ]; then
-    echo "::error::make failed with exit $exitcode"
-    cp "$log" "$GITHUB_WORKSPACE/"
-    exit "$exitcode"
-fi
+      - name: Build XNU Kernel
+        run: |
+          cd xnu
+          make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE \
+               SDKROOT="$SDKROOT" BUILD_LTO="$BUILD_LTO" \
+               -j$(sysctl -n hw.ncpu) 2>&1 | tee -a ../build.log
+          exitcode=${PIPESTATUS[0]}
+          if [ "$exitcode" -ne 0 ]; then
+            echo "::error::make failed with exit $exitcode"
+            exit "$exitcode"
+          fi
 
-# Copier le log final
-cp "$log" "$GITHUB_WORKSPACE/"
-echo "Build completed successfully"
+      - name: Upload build log
+        uses: actions/upload-artifact@v3
+        with:
+          name: xnu-build-log
+          path: build.log
