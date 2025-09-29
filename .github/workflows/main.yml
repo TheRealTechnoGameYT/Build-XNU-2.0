@@ -135,7 +135,7 @@ jobs:
         run: |
           set -euo pipefail
           # Définir le dossier cible
-          target="/tmp"
+          target="/usr/local/libexec"
           sudo mkdir -p "$target"
           sudo cp "build-xnu/availability.pl" "$target/availability.pl"
           sudo chmod +x "$target/availability.pl"
@@ -179,20 +179,20 @@ jobs:
           cd xnu
           # Modifier le Makefile pour utiliser le chemin personnalisé de availability.pl
           if [ -f "Makefile" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/tmp/availability.pl|g' Makefile
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/tmp/availability.pl|g' Makefile
+            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' Makefile
+            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' Makefile
           fi
           if [ -f "mk/Makefile" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/tmp/availability.pl|g' mk/Makefile
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/tmp/availability.pl|g' mk/Makefile
+            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
+            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
           fi
           if [ -f "mk/Makefile.rules" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/tmp/availability.pl|g' mk/Makefile.rules
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/tmp/availability.pl|g' mk/Makefile.rules
+            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile.rules
+            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile.rules
           fi
           if [ -f "mk/Makefile" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/tmp/availability.pl|g' mk/Makefile
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/tmp/availability.pl|g' mk/Makefile
+            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
+            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
           fi
 
       - name: Build XNU
@@ -215,9 +215,9 @@ jobs:
           echo "Chemin du script availability.pl:"
           which availability.pl || echo "Le script availability.pl n'est pas dans le PATH"
           # Ajouter le chemin du script availability.pl au PATH si nécessaire
-          export PATH="/tmp:$PATH"
+          export PATH="/usr/local/libexec:$PATH"
           # Vérifier que le script est exécutable
-          if [ -x "/tmp/availability.pl" ]; then
+          if [ -x "/usr/local/libexec/availability.pl" ]; then
             echo "Le script availability.pl est exécutable."
           else
             echo "::error::Le script availability.pl n'est pas exécutable."
