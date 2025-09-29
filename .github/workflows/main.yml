@@ -134,20 +134,9 @@ jobs:
       - name: Ensure availability.pl
         run: |
           set -euo pipefail
-          # Définir le dossier cible
-          target="/usr/local/libexec"
-          sudo mkdir -p "$target"
-          sudo cp "build-xnu/availability.pl" "$target/availability.pl"
-          sudo chmod +x "$target/availability.pl"
-          echo "availability.pl installé dans $target :"
-          ls -l "$target/availability.pl"
-          # Vérifier que le script est exécutable
-          if [ -f "$target/availability.pl" ]; then
-            echo "Le script availability.pl est présent et exécutable."
-          else
-            echo "::error::Le script availability.pl n'est pas présent ou exécutable."
-            exit 1
-          fi
+          sudo mkdir -p "$SDKROOT/usr/local/libexec"
+          sudo cp build-xnu/availability.pl "$SDKROOT/usr/local/libexec/"
+          sudo chmod +x "$SDKROOT/usr/local/libexec/availability.pl"
 
       - name: Clone latest XNU
         run: |
@@ -172,28 +161,6 @@ jobs:
               echo "$t -> $p"
             fi
           done
-
-      - name: Modify XNU Makefile for availability.pl path
-        run: |
-          set -euo pipefail
-          cd xnu
-          # Modifier le Makefile pour utiliser le chemin personnalisé de availability.pl
-          if [ -f "Makefile" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' Makefile
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' Makefile
-          fi
-          if [ -f "mk/Makefile" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
-          fi
-          if [ -f "mk/Makefile.rules" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile.rules
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile.rules
-          fi
-          if [ -f "mk/Makefile" ]; then
-            sudo sed -i '' 's|/usr/local/libexec/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
-            sudo sed -i '' 's|/usr/local/bin/availability.pl|/usr/local/libexec/availability.pl|g' mk/Makefile
-          fi
 
       - name: Build XNU
         id: build_kernel
