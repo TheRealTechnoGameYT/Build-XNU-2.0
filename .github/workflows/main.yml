@@ -137,6 +137,7 @@ jobs:
           sudo mkdir -p "$SDKROOT/usr/local/libexec"
           sudo cp build-xnu/availability.pl "$SDKROOT/usr/local/libexec/"
           sudo chmod +x "$SDKROOT/usr/local/libexec/availability.pl"
+          [ -x "$SDKROOT/usr/local/libexec/availability.pl" ] && echo "Executable ✅" || echo "Not executable ❌"
 
       - name: Clone latest XNU
         run: |
