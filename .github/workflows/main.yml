@@ -194,6 +194,13 @@ jobs:
           which availability.pl || echo "Le script availability.pl n'est pas dans le PATH"
           # Ajouter le chemin du script availability.pl au PATH si nécessaire
           export PATH="/usr/local/libexec:$PATH"
+          # Vérifier que le script est exécutable
+          if [ -x "/usr/local/libexec/availability.pl" ]; then
+            echo "Le script availability.pl est exécutable."
+          else
+            echo "::error::Le script availability.pl n'est pas exécutable."
+            exit 1
+          fi
           if [ -n "$SDKROOT" ]; then
             make SDKROOT="$SDKROOT" ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
             exitcode=${PIPESTATUS[0]}
