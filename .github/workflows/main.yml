@@ -28,6 +28,7 @@ jobs:
           echo "CPUs: $(sysctl -n hw.ncpu || echo unknown)"
           echo "PATH: $PATH"
           xcodebuild -version || true
+
       - name: Clone Build-XNU 2.0 repo
         run: |
           git clone https://github.com/TheRealTechnoGameYT/Build-XNU-2.0.git build-xnu
@@ -136,10 +137,8 @@ jobs:
           # Définir le dossier cible
           target="/usr/local/libexec"
           sudo mkdir -p "$target"
-
           sudo cp "build-xnu/availability.pl" "$target/availability.pl"
           sudo chmod +x "$target/availability.pl"
-
           echo "availability.pl installé dans $target :"
           ls -l "$target/availability.pl"
 
