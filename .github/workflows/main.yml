@@ -141,6 +141,13 @@ jobs:
           sudo chmod +x "$target/availability.pl"
           echo "availability.pl installé dans $target :"
           ls -l "$target/availability.pl"
+          # Vérifier que le script est exécutable
+          if [ -f "$target/availability.pl" ]; then
+            echo "Le script availability.pl est présent et exécutable."
+          else
+            echo "::error::Le script availability.pl n'est pas présent ou exécutable."
+            exit 1
+          fi
 
       - name: Clone latest XNU
         run: |
@@ -182,6 +189,11 @@ jobs:
           fi
           log="$GITHUB_WORKSPACE/build.log"
           echo "Build start $(date)" > "$log"
+          # Vérifier que le script availability.pl est dans le PATH ou accessible
+          echo "Chemin du script availability.pl:"
+          which availability.pl || echo "Le script availability.pl n'est pas dans le PATH"
+          # Ajouter le chemin du script availability.pl au PATH si nécessaire
+          export PATH="/usr/local/libexec:$PATH"
           if [ -n "$SDKROOT" ]; then
             make SDKROOT="$SDKROOT" ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
             exitcode=${PIPESTATUS[0]}
