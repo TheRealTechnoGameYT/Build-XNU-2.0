@@ -6,7 +6,7 @@ on:
     branches: [ main, master ]
 
 permissions:
-  contents: write  # ✅ nécessaire pour pouvoir commiter availability.pl si manquant
+  contents: read
 
 jobs:
   build-xnu:
@@ -130,25 +130,24 @@ jobs:
             echo "SDKROOT=$sdk2" >> $GITHUB_ENV
           fi
 
-      - name: Ensure availability.pl (auto-fetch & commit if missing)
+      - name: Ensure availability.pl (auto-create if missing)
         run: |
           set -euo pipefail
-          if [ ! -f "availability.pl" ]; then
-            echo "availability.pl not found in repo — downloading from Build-XNU-2.0"
-            cp build-xnu/availability.pl availability.pl
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add availability.pl
-            git commit -m "Add missing availability.pl (auto-added by CI)" || true
-            git push || echo "::warning::Failed to push availability.pl (read-only token?)"
-          else
-            echo "availability.pl already exists ✅"
+          TARGET="$SDKROOT/usr/local/libexec"
+          mkdir -p "$TARGET"
+          if [ ! -f build-xnu/availability.pl ]; then
+            echo "::warning::availability.pl not found in repo, creating default version."
+            cat <<'EOF' > build-xnu/availability.pl
+#!/usr/bin/perl
+use strict;
+use warnings;
+exit 0;
+EOF
           fi
-
-          sudo mkdir -p "$SDKROOT/usr/local/libexec"
-          sudo cp availability.pl "$SDKROOT/usr/local/libexec/"
-          sudo chmod +x "$SDKROOT/usr/local/libexec/availability.pl"
-          [ -x "$SDKROOT/usr/local/libexec/availability.pl" ] && echo "Executable ✅" || echo "Not executable ❌"
+          sudo cp build-xnu/availability.pl "$TARGET/availability.pl" || cp build-xnu/availability.pl "$TARGET/availability.pl"
+          sudo chmod +x "$TARGET/availability.pl" || chmod +x "$TARGET/availability.pl"
+          echo "✅ availability.pl ready at: $TARGET/availability.pl"
+          ls -l "$TARGET/availability.pl"
 
       - name: Clone latest XNU
         run: |
@@ -179,10 +178,7 @@ jobs:
         run: |
           set -euxo pipefail
           cd xnu
-          SDKROOT="${SDKROOT:-}"
-          if [ -z "$SDKROOT" ]; then
-            SDKROOT=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
-          fi
+          SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)}"
           echo "SDKROOT=$SDKROOT"
           if [ -n "${RC_DARWIN_KERNEL_VERSION:-}" ]; then
             export RC_DARWIN_KERNEL_VERSION
@@ -197,15 +193,11 @@ jobs:
             echo "Le script availability.pl est exécutable."
           else
             echo "::error::Le script availability.pl n'est pas exécutable."
+            ls -l /usr/local/libexec || true
             exit 1
           fi
-          if [ -n "$SDKROOT" ]; then
-            make SDKROOT="$SDKROOT" ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
-            exitcode=${PIPESTATUS[0]}
-          else
-            make ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
-            exitcode=${PIPESTATUS[0]}
-          fi
+          make SDKROOT="$SDKROOT" ARCH_CONFIGS=X86_64 KERNEL_CONFIGS=RELEASE -j"$(sysctl -n hw.ncpu)" 2>&1 | tee -a "$log"
+          exitcode=${PIPESTATUS[0]}
           if [ "$exitcode" -ne 0 ]; then
             echo "::error::make failed with exit $exitcode"
             cp "$log" "$GITHUB_WORKSPACE/"
@@ -220,9 +212,7 @@ jobs:
           mkdir -p artifacts
           find xnu/BUILD -type f -name 'kernel' -exec cp {} artifacts/ \; || true
           find xnu/BUILD -type d -name '*.dSYM' -exec cp -R {} artifacts/ \; || true
-          if [ -f build.log ]; then
-            cp build.log artifacts/
-          fi
+          [ -f build.log ] && cp build.log artifacts/
           tar -czf xnu-artifacts-$(date +%Y%m%d-%H%M).tar.gz artifacts
 
       - name: Upload artifacts
