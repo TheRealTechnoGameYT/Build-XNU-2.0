@@ -6,7 +6,7 @@ on:
     branches: [ main, master ]
 
 permissions:
-  contents: read
+  contents: write  # ✅ nécessaire pour pouvoir commiter availability.pl si manquant
 
 jobs:
   build-xnu:
@@ -125,17 +125,28 @@ jobs:
               echo "SDKROOT=$sdk" >> $GITHUB_ENV
             fi
           fi
-          # fallback to xcrun
           sdk2=$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)
           if [ -n "$sdk2" ]; then
             echo "SDKROOT=$sdk2" >> $GITHUB_ENV
           fi
 
-      - name: Ensure availability.pl
+      - name: Ensure availability.pl (auto-fetch & commit if missing)
         run: |
           set -euo pipefail
+          if [ ! -f "availability.pl" ]; then
+            echo "availability.pl not found in repo — downloading from Build-XNU-2.0"
+            cp build-xnu/availability.pl availability.pl
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add availability.pl
+            git commit -m "Add missing availability.pl (auto-added by CI)" || true
+            git push || echo "::warning::Failed to push availability.pl (read-only token?)"
+          else
+            echo "availability.pl already exists ✅"
+          fi
+
           sudo mkdir -p "$SDKROOT/usr/local/libexec"
-          sudo cp build-xnu/availability.pl "$SDKROOT/usr/local/libexec/"
+          sudo cp availability.pl "$SDKROOT/usr/local/libexec/"
           sudo chmod +x "$SDKROOT/usr/local/libexec/availability.pl"
           [ -x "$SDKROOT/usr/local/libexec/availability.pl" ] && echo "Executable ✅" || echo "Not executable ❌"
 
@@ -179,12 +190,9 @@ jobs:
           fi
           log="$GITHUB_WORKSPACE/build.log"
           echo "Build start $(date)" > "$log"
-          # Vérifier que le script availability.pl est dans le PATH ou accessible
           echo "Chemin du script availability.pl:"
           which availability.pl || echo "Le script availability.pl n'est pas dans le PATH"
-          # Ajouter le chemin du script availability.pl au PATH si nécessaire
           export PATH="/usr/local/libexec:$PATH"
-          # Vérifier que le script est exécutable
           if [ -x "/usr/local/libexec/availability.pl" ]; then
             echo "Le script availability.pl est exécutable."
           else
